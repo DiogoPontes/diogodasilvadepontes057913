@@ -19,3 +19,17 @@ minio:
   accessKey: admin
   secretKey: admin123
   bucket: album-covers
+  
+
+app:
+  jwt:
+    secret: "your-secret-key-change-this-in-production-with-at-least-32-characters-for-security"
+    expiration: 86400000 # 24 horas em ms
+    refresh-expiration: 604800000 # 7 dias em ms
+
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

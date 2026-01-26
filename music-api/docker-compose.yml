@@ -27,14 +27,14 @@ services:
     volumes:
       - minio-data:/data
 
-  api:
-    build: .
-    container_name: music_api
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-      - minio
+#  api:
+#    build: .
+#    container_name: music_api
+#    ports:
+#      - "8080:8080"
+#    depends_on:
+#      - postgres
+#      - minio
 
 volumes:
   pgdata:
