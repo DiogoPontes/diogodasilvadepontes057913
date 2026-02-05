@@ -2,7 +2,6 @@ package com.seplag.music.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 
@@ -30,12 +30,20 @@ public class JwtProvider {
     private long refreshTokenExpirationMs;
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        try {
+            byte[] keyBytes = Base64.getDecoder().decode(jwtSecret);
+            return Keys.hmacShaKeyFor(keyBytes);
+        } catch (IllegalArgumentException ex) {
+            return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     public String generateAccessToken(Authentication authentication) {
         String username = authentication.getName();
-        String role = authentication.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
+        String role = "USER";
+        if (authentication.getAuthorities() != null && authentication.getAuthorities().iterator().hasNext()) {
+            role = authentication.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
+        }
         return generateToken(username, Map.of("role", role), jwtExpirationMs);
     }
 
@@ -56,7 +64,7 @@ public class JwtProvider {
                 .claims(claims)
                 .issuedAt(now)
                 .expiration(expiration)
-                .signWith(getSigningKey(), SignatureAlgorithm.HS512)
+                .signWith(getSigningKey())
                 .compact();
     }
 
@@ -65,7 +73,8 @@ public class JwtProvider {
     }
 
     public String getRoleFromToken(String token) {
-        return (String) parseClaims(token).get("role");
+        Object role = parseClaims(token).get("role");
+        return role != null ? role.toString() : null;
     }
 
     public boolean validateToken(String token) {
@@ -73,16 +82,16 @@ public class JwtProvider {
             parseClaims(token);
             return true;
         } catch (Exception e) {
-            log.error("Erro ao validar token: {}", e.getMessage());
+            log.error("Erro ao validar token: ", e);
             return false;
         }
     }
 
     private Claims parseClaims(String token) {
-        return (Claims) Jwts.parser()
+        return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
-                .parse(token)
+                .parseSignedClaims(token)
                 .getPayload();
     }
 

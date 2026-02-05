@@ -1,16 +1,26 @@
 package com.seplag.music.domain.dto;
 
-import lombok.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AlbumCoverDTO {
 
     private Long id;
-    private String objectName;
+    private Long albumId;
+    private String fileName;
+    private String contentType;
+    private Long fileSize;
+    private Boolean isPrimary;
+    private String presignedUrl;
     private LocalDateTime createdAt;
 }

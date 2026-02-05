@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -17,7 +18,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 import java.util.Arrays;
 
@@ -42,45 +42,19 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .headers(headers -> headers
-                    .frameOptions(frameOptions -> frameOptions.disable())
-                    .xssProtection(xss -> xss.disable())  
-                )
-                .authorizeHttpRequests(authz -> authz
-                        // Auth endpoints - permitAll
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated()
-                        
-                        // Swagger/OpenAPI
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        
-                        // Public endpoints
-                        .requestMatchers(HttpMethod.GET, "/api/v1/artists").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/albums/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/regionals/**").permitAll()
-                        
-                        // Protected endpoints
-                        .requestMatchers(HttpMethod.POST, "/api/v1/artists/**").authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/artists/**").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/artists/**").authenticated()
-                        
-                        .requestMatchers(HttpMethod.POST, "/api/v1/albums/**").authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/albums/**").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/albums/**").authenticated()
-                        
-                        .requestMatchers(HttpMethod.POST, "/api/v1/album-covers/**").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/album-covers/**").authenticated()
-                        
-                        // Any other request requires authentication
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                // liberar explicitamente o endpoint do WebSocket e seus sub-caminhos (handshake /ws/**)
+                .requestMatchers("/ws/**").permitAll()
+                // liberar endpoints públicos de auth e docs
+                .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                // liberar GET público da API (se for sua intenção)
+                .requestMatchers(HttpMethod.GET, "/api/v1/**").permitAll()
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -88,13 +62,18 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("*"));
+        // usar allowedOriginPatterns para aceitar '*' de forma segura em muitos cenários
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        // métodos permitidos
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(false);
+        // cabeçalhos permitidos — incluir Authorization para o Bearer token
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control", "X-Requested-With"));
+        // Permitir credenciais (necessário para alguns handshakes SockJS/XHR)
+        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        // aplica a configuração para todos os endpoints (inclui /ws/**)
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }

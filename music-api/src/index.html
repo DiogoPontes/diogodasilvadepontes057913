@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Music API - Dashboard de Testes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Bibliotecas para WebSocket STOMP -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto space-y-8">
+        <h1 class="text-3xl font-bold text-center text-indigo-600">Music API - Dashboard de Testes</h1>
+
+        <!-- Área de notificações WebSocket -->
+        <div id="wsNotifications" class="max-w-4xl mx-auto p-4 bg-yellow-100 border border-yellow-400 rounded text-yellow-800 font-semibold hidden"></div>
+
+        <!-- LOGIN & REGISTER SECTION -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">1. Autenticação</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input id="user" type="text" placeholder="Usuário" class="border p-2 rounded" value="admin">
+                <input id="pass" type="password" placeholder="Senha" class="border p-2 rounded" value="admin123">
+                <input id="email" type="email" placeholder="Email" class="border p-2 rounded" value="admin@seplag.com">
+                <input id="fullName" type="text" placeholder="Nome completo" class="border p-2 rounded" value="Administrador">
+            </div>
+
+            <div class="flex items-center gap-2 mt-4">
+                <label class="text-sm">Role:</label>
+                <select id="role" class="border p-2 rounded">
+                    <option value="ADMIN" selected>ADMIN</option>
+                    <option value="USER">USER</option>
+                </select>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2">
+                <button onclick="login()" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">Fazer Login</button>
+                <button onclick="register()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Registrar Admin</button>
+                <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Logout</button>
+            </div>
+
+            <p id="loginStatus" class="mt-2 text-sm font-mono break-all"></p>
+            <textarea id="tokenBox" readonly class="w-full mt-2 p-2 border rounded text-xs" rows="3" placeholder="Token aparecerá aqui..."></textarea>
+        </div>
+
+        <!-- ARTISTS SECTION -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">2. Artistas</h2>
+            <div class="flex gap-2">
+                <button onclick="getArtists()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Listar Artistas</button>
+            </div>
+            <div id="artistList" class="mt-4 space-y-2"></div>
+        </div>
+
+        <!-- UPLOAD SECTION -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">3. Upload de Capa (MinIO)</h2>
+            <div class="flex flex-col space-y-4">
+                <div class="flex items-center gap-4">
+                    <input id="albumId" type="number" placeholder="ID do Álbum" class="border p-2 rounded w-32" value="1">
+                    <input id="fileInput" type="file" class="border p-2 rounded flex-1">
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="uploadFile()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-max">Enviar para MinIO</button>
+                    <button onclick="refreshTokenStatus()" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 w-max">Verificar Token</button>
+                </div>
+            </div>
+            <p id="uploadStatus" class="mt-2 text-sm"></p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080/api/v1';
+        let token = '';
+        let stompClient = null;
+        let reconnectIntervalMs = 5000;
+        let reconnectTimer = null;
+
+        function setStatus(elementId, message, ok = true) {
+            const el = document.getElementById(elementId);
+            el.innerText = message;
+            el.className = ok ? 'mt-2 text-sm text-green-600' : 'mt-2 text-sm text-red-600';
+        }
+
+        function refreshTokenStatus() {
+            if (!token) {
+                setStatus('loginStatus', 'Nenhum token presente. Faça login.', false);
+                document.getElementById('tokenBox').value = '';
+                return;
+            }
+            document.getElementById('tokenBox').value = token;
+            setStatus('loginStatus', 'Token presente. Pronto para usar.', true);
+        }
+
+        async function register() {
+            const username = document.getElementById('user').value;
+            const password = document.getElementById('pass').value;
+            const email = document.getElementById('email').value;
+            const fullName = document.getElementById('fullName').value;
+            const role = document.getElementById('role').value;
+
+            try {
+                const res = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, email, fullName, role })
+                });
+
+                if (res.ok) {
+                    setStatus('loginStatus', '✅ Usuário registrado com sucesso. Agora faça login.', true);
+                } else {
+                    const err = await res.json().catch(()=>({message: res.statusText}));
+                    setStatus('loginStatus', '❌ Erro ao registrar: ' + (err.message || res.statusText), false);
+                }
+            } catch (err) {
+                setStatus('loginStatus', '❌ Erro de conexão: ' + err.message, false);
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('user').value;
+            const password = document.getElementById('pass').value;
+            try {
+                const res = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json().catch(()=>null);
+                if (res.ok && data && data.accessToken) {
+                    token = data.accessToken;
+                    document.getElementById('tokenBox').value = token;
+                    setStatus('loginStatus', '✅ Login realizado! Conectando WebSocket...', true);
+
+                    // Conectar ao WS (com pequeno delay)
+                    setTimeout(() => connectWebSocket(), 300);
+                } else {
+                    const msg = data && data.message ? data.message : (res.statusText || 'Falha no login');
+                    setStatus('loginStatus', '❌ Erro: ' + msg, false);
+                }
+            } catch (err) {
+                setStatus('loginStatus', '❌ Erro de conexão: ' + err.message, false);
+            }
+        }
+
+        function logout() {
+            token = '';
+            document.getElementById('tokenBox').value = '';
+            setStatus('loginStatus', 'Deslogado.', true);
+            disconnectWebSocket();
+        }
+
+        async function getArtists() {
+            if (!token) {
+                alert('Faça login primeiro!');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/artists?page=0&size=10`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(()=>({message: res.statusText}));
+                    setStatus('loginStatus', '❌ Erro ao listar artistas: ' + (err.message || res.statusText), false);
+                    return;
+                }
+                const data = await res.json();
+                const list = document.getElementById('artistList');
+                if (!data || !data.content) {
+                    list.innerHTML = '<div class="p-3">Nenhum artista encontrado.</div>';
+                    return;
+                }
+                list.innerHTML = data.content.map(a => `
+                    <div class="p-3 border-b flex justify-between">
+                        <span><strong>${a.name}</strong> (${a.type})</span>
+                        <span class="text-gray-500 text-xs">ID: ${a.id}</span>
+                    </div>
+                `).join('');
+                setStatus('loginStatus', '✅ Artistas carregados.', true);
+            } catch (err) {
+                setStatus('loginStatus', '❌ Erro ao buscar artistas: ' + err.message, false);
+            }
+        }
+
+        async function uploadFile() {
+            if (!token) {
+                alert('Faça login primeiro!');
+                return;
+            }
+            const fileField = document.getElementById('fileInput');
+            const albumId = document.getElementById('albumId').value;
+            if (!fileField.files.length) return alert('Selecione um arquivo');
+
+            const formData = new FormData();
+            formData.append('file', fileField.files[0]);
+
+            try {
+                setStatus('uploadStatus', 'Enviando...', true);
+                const res = await fetch(`${API_URL}/albums/${albumId}/covers`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                if (res.ok) {
+                    setStatus('uploadStatus', '✅ Upload realizado com sucesso no MinIO!', true);
+                } else {
+                    const errData = await res.json().catch(()=>({message: res.statusText}));
+                    setStatus('uploadStatus', '❌ Erro: ' + (errData.message || res.statusText), false);
+                }
+            } catch (err) {
+                setStatus('uploadStatus', '❌ Erro de conexão: ' + err.message, false);
+            }
+        }
+
+        function connectWebSocket() {
+            // Necessita token para conectar (evita conexões anônimas)
+            if (!token) {
+                setStatus('loginStatus', '❌ Token ausente: faça login antes de conectar WebSocket.', false);
+                return;
+            }
+
+            // Limpa tentativas de reconexão pendentes
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+
+            // Se já tem cliente, desconecta para reiniciar
+            if (stompClient !== null) {
+                try { stompClient.disconnect(); } catch(e){ /* ignore */ }
+                stompClient = null;
+            }
+
+            const socket = new SockJS('http://localhost:8080/ws', null, {
+                transports: ['websocket','xhr-streaming','xhr-polling']
+            });
+
+            stompClient = Stomp.over(socket);
+
+            // Opcional: desativa logs verbose do STOMP
+            if (stompClient) {
+                stompClient.debug = null;
+                // desativa heartbeats para evitar mismatch
+                stompClient.heartbeat.outgoing = 0;
+                stompClient.heartbeat.incoming = 0;
+                // reconnection delay em ms (algumas versões do stompjs respeitam essa propriedade)
+                stompClient.reconnect_delay = reconnectIntervalMs;
+            }
+
+            // Envia Authorization header no CONNECT (útil se implementar HandshakeInterceptor)
+            const connectHeaders = { 'Authorization': 'Bearer ' + token };
+
+            stompClient.connect(connectHeaders, function(frame) {
+                console.log('WS conectado:', frame);
+                setStatus('loginStatus', '✅ Login e WebSocket ativos!', true);
+
+                // Subscribe to albums topic
+                stompClient.subscribe('/topic/albums', function(message) {
+                    try {
+                        const notification = JSON.parse(message.body);
+                        showNotification(notification.message);
+                    } catch (e) {
+                        console.warn('Mensagem WS sem JSON:', message.body);
+                    }
+                });
+
+            }, function(error) {
+                console.error('Erro WS:', error);
+                setStatus('loginStatus', '❌ Erro na conexão WebSocket. Tentando reconectar em 5s...', false);
+
+                // tentativa simples de reconexão enquanto token estiver presente
+                if (token) {
+                    reconnectTimer = setTimeout(() => {
+                        connectWebSocket();
+                    }, reconnectIntervalMs);
+                }
+            });
+        }
+
+        function disconnectWebSocket() {
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            if (stompClient !== null) {
+                try {
+                    stompClient.disconnect();
+                } catch (err) {
+                    console.warn('Erro ao desconectar stompClient', err);
+                }
+                stompClient = null;
+            }
+        }
+
+        function showNotification(message) {
+            const container = document.getElementById('wsNotifications');
+            container.innerText = message;
+            container.classList.remove('hidden');
+
+            setTimeout(() => {
+                container.classList.add('hidden');
+                container.innerText = '';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
