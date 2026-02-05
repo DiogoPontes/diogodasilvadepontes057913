@@ -1,34 +1,43 @@
 package com.seplag.music.domain.dto;
 
 import com.seplag.music.domain.model.Album;
+
+import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
 public class AlbumMapper {
 
     private final ArtistMapper artistMapper;
+    private final AlbumCoverMapper albumCoverMapper; 
 
-    public AlbumMapper(ArtistMapper artistMapper) {
-        this.artistMapper = artistMapper;
-    }
-
-    public AlbumDTO toDTO(Album album) {
-        if (album == null) {
-            return null;
-        }
-        return AlbumDTO.builder()
-                .id(album.getId())
-                .title(album.getTitle())
-                .releaseYear(album.getReleaseYear())
-                .createdAt(album.getCreatedAt())
-                .artists(album.getArtists() != null
-                        ? album.getArtists().stream()
-                        .map(artistMapper::toDTO)
-                        .collect(Collectors.toSet())
-                        : null)
-                .build();
+    public AlbumDTO toDTO(Album entity) {  
+        if (entity == null) return null;  
+  
+        AlbumDTO dto = AlbumDTO.builder()  
+                .id(entity.getId())  
+                .title(entity.getTitle())  
+                .releaseYear(entity.getReleaseYear())  
+                .createdAt(entity.getCreatedAt())  
+                .build();  
+  
+        if (entity.getArtists() != null) {  
+            dto.setArtists(entity.getArtists().stream()  
+                .map(artistMapper::toDTO)  
+                .collect(Collectors.toSet()));  
+        }  
+  
+        if (entity.getCovers() != null) {  
+            dto.setCovers(entity.getCovers().stream()  
+                .map(albumCoverMapper::toDTO)  
+                .collect(Collectors.toSet()));  
+        }  
+  
+        return dto;  
     }
 
     public Album toEntity(AlbumCreateUpdateDTO dto) {

@@ -2,7 +2,6 @@ package com.seplag.music.domain.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.LocalDateTime;
@@ -11,14 +10,18 @@ import java.util.Set;
 
 @Entity
 @Table(name = "album")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(exclude = {"artists", "covers"})
 public class Album {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @EqualsAndHashCode.Include
     private Long id;
 
     @Column(nullable = false, length = 200)

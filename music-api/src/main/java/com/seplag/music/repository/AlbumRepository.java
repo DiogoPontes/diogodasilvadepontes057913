@@ -3,6 +3,7 @@ package com.seplag.music.repository;
 import com.seplag.music.domain.model.Album;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -25,4 +26,13 @@ public interface AlbumRepository extends JpaRepository<Album, Long> {
 
     @Query("SELECT a FROM Album a WHERE LOWER(a.title) LIKE LOWER(CONCAT('%', :title, '%')) ORDER BY a.title DESC")
     Page<Album> findByTitleOrderDesc(@Param("title") String title, Pageable pageable);
+
+    // Anota os métodos padrão para carregar artists e covers junto (evita LazyInitializationException)
+    @Override
+    @EntityGraph(attributePaths = {"artists", "covers"})
+    Page<Album> findAll(Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = {"artists", "covers"})
+    Optional<Album> findById(Long id);
 }

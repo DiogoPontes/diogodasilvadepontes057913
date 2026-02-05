@@ -3,6 +3,7 @@ package com.seplag.music.service;
 import com.seplag.music.domain.dto.AlbumCreateUpdateDTO;
 import com.seplag.music.domain.dto.AlbumDTO;
 import com.seplag.music.domain.dto.AlbumMapper;
+import com.seplag.music.domain.dto.AlbumCoverDTO;
 import com.seplag.music.domain.dto.AlbumNotificationDTO;
 import com.seplag.music.domain.model.Album;
 import com.seplag.music.domain.model.Artist;
@@ -17,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -26,6 +30,7 @@ public class AlbumService {
     private final ArtistRepository artistRepository;
     private final AlbumMapper albumMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final StorageService storageService; // injetei o StorageService aqui
 
     public AlbumDTO create(AlbumCreateUpdateDTO dto) {
         Album album = albumMapper.toEntity(dto);
@@ -77,13 +82,71 @@ public class AlbumService {
     public AlbumDTO findById(Long id) {
         Album album = albumRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Álbum não encontrado com ID: " + id));
-        return albumMapper.toDTO(album);
+
+        // Força inicialização das collections LAZY dentro da transação
+        if (album.getCovers() != null) {
+            album.getCovers().size();
+        }
+        if (album.getArtists() != null) {
+            album.getArtists().size();
+        }
+
+        AlbumDTO dto = albumMapper.toDTO(album);
+
+        // Preenche URLs nas covers (presigned ou pública como fallback)
+        if (dto.getCovers() != null && !dto.getCovers().isEmpty()) {
+            dto.getCovers().forEach(c -> {
+                String objectName = c.getObjectName() != null ? c.getObjectName() : c.getFileName();
+                try {
+                    c.setUrl(storageService.getPresignedUrl(objectName));
+                } catch (Exception e) {
+                    try {
+                        c.setUrl(storageService.getPublicUrl(objectName));
+                    } catch (Exception ex) {
+                        // deixa null caso ambos falhem
+                    }
+                }
+            });
+        }
+
+        return dto;
     }
 
     @Transactional(readOnly = true)
     public Page<AlbumDTO> findAll(Pageable pageable) {
         return albumRepository.findAll(pageable)
-                .map(albumMapper::toDTO);
+                .map(album -> {
+                    // Força inicialização das collections LAZY dentro da transação
+                    if (album.getCovers() != null) {
+                        album.getCovers().size();
+                    }
+                    if (album.getArtists() != null) {
+                        album.getArtists().size();
+                    }
+
+                    AlbumDTO dto = albumMapper.toDTO(album);
+
+                    if (dto.getCovers() != null && !dto.getCovers().isEmpty()) {
+                        Set<AlbumCoverDTO> coversWithUrl = dto.getCovers().stream().map(c -> {
+                            String objectName = c.getObjectName() != null ? c.getObjectName() : c.getFileName();
+                            String url = null;
+                            try {
+                                url = storageService.getPresignedUrl(objectName);
+                            } catch (Exception e) {
+                                try {
+                                    url = storageService.getPublicUrl(objectName);
+                                } catch (Exception ex) {
+                                    // url permanece null
+                                }
+                            }
+                            c.setUrl(url);
+                            return c;
+                        }).collect(Collectors.toSet());
+                        dto.setCovers(coversWithUrl);
+                    }
+
+                    return dto;
+                });
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +159,34 @@ public class AlbumService {
             page = albumRepository.findByTitleOrderAsc(title, pageable);
         }
 
-        return page.map(albumMapper::toDTO);
+        return page.map(album -> {
+            // inicializa covers/artists
+            if (album.getCovers() != null) album.getCovers().size();
+            if (album.getArtists() != null) album.getArtists().size();
+
+            AlbumDTO dto = albumMapper.toDTO(album);
+
+            if (dto.getCovers() != null && !dto.getCovers().isEmpty()) {
+                Set<AlbumCoverDTO> coversWithUrl = dto.getCovers().stream().map(c -> {
+                    String objectName = c.getObjectName() != null ? c.getObjectName() : c.getFileName();
+                    String url = null;
+                    try {
+                        url = storageService.getPresignedUrl(objectName);
+                    } catch (Exception e) {
+                        try {
+                            url = storageService.getPublicUrl(objectName);
+                        } catch (Exception ex) {
+                            // url permanece null
+                        }
+                    }
+                    c.setUrl(url);
+                    return c;
+                }).collect(Collectors.toSet());
+                dto.setCovers(coversWithUrl);
+            }
+
+            return dto;
+        });
     }
 
     @Transactional(readOnly = true)
@@ -104,8 +194,36 @@ public class AlbumService {
         if (!artistRepository.existsById(artistId)) {
             throw new RuntimeException("Artista não encontrado com ID: " + artistId);
         }
+
         return albumRepository.findByArtistId(artistId, pageable)
-                .map(albumMapper::toDTO);
+                .map(album -> {
+                    // inicializa covers/artists
+                    if (album.getCovers() != null) album.getCovers().size();
+                    if (album.getArtists() != null) album.getArtists().size();
+
+                    AlbumDTO dto = albumMapper.toDTO(album);
+
+                    if (dto.getCovers() != null && !dto.getCovers().isEmpty()) {
+                        Set<AlbumCoverDTO> coversWithUrl = dto.getCovers().stream().map(c -> {
+                            String objectName = c.getObjectName() != null ? c.getObjectName() : c.getFileName();
+                            String url = null;
+                            try {
+                                url = storageService.getPresignedUrl(objectName);
+                            } catch (Exception e) {
+                                try {
+                                    url = storageService.getPublicUrl(objectName);
+                                } catch (Exception ex) {
+                                    // url permanece null
+                                }
+                            }
+                            c.setUrl(url);
+                            return c;
+                        }).collect(Collectors.toSet());
+                        dto.setCovers(coversWithUrl);
+                    }
+
+                    return dto;
+                });
     }
 
     public void addArtistToAlbum(Long albumId, Long artistId) {

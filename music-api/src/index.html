@@ -3,71 +3,109 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Music API - Dashboard de Testes</title>
+    <title>Music API - Gerenciador</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Bibliotecas para WebSocket STOMP -->
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        .card-album:hover .btn-actions { opacity: 1; }
+        .btn-actions { opacity: 0; transition: opacity 0.3s; }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-8">
-    <div class="max-w-4xl mx-auto space-y-8">
-        <h1 class="text-3xl font-bold text-center text-indigo-600">Music API - Dashboard de Testes</h1>
+<body class="bg-gray-50 min-h-screen pb-20">
+    
+    <!-- Notificações WebSocket -->
+    <div id="wsNotifications" class="fixed top-4 right-4 z-50 max-w-md p-4 bg-indigo-600 text-white rounded-lg shadow-2xl hidden animate-bounce"></div>
 
-        <!-- Área de notificações WebSocket -->
-        <div id="wsNotifications" class="max-w-4xl mx-auto p-4 bg-yellow-100 border border-yellow-400 rounded text-yellow-800 font-semibold hidden"></div>
+    <nav class="bg-indigo-700 text-white p-4 shadow-lg mb-8">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold">🎵 Music SEPLAG Manager</h1>
+            <div id="authInfo" class="text-sm"></div>
+        </div>
+    </nav>
 
-        <!-- LOGIN & REGISTER SECTION -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">1. Autenticação</h2>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="max-w-6xl mx-auto px-4 space-y-12">
+        
+        <!-- SEÇÃO 1: LOGIN (Minimizada após login) -->
+        <section id="loginSection" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-bold mb-4 flex items-center gap-2">🔑 Autenticação</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <input id="user" type="text" placeholder="Usuário" class="border p-2 rounded" value="admin">
                 <input id="pass" type="password" placeholder="Senha" class="border p-2 rounded" value="admin123">
-                <input id="email" type="email" placeholder="Email" class="border p-2 rounded" value="admin@seplag.com">
-                <input id="fullName" type="text" placeholder="Nome completo" class="border p-2 rounded" value="Administrador">
+                <button onclick="login()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition">Entrar</button>
+                <button onclick="logout()" class="bg-red-100 text-red-600 px-4 py-2 rounded hover:bg-red-200 transition">Sair</button>
+            </div>
+            <p id="loginStatus" class="mt-2 text-xs font-mono"></p>
+        </section>
+
+        <!-- SEÇÃO 2: ARTISTAS -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Formulário Artista -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
+                <h2 class="text-lg font-bold mb-4">👤 Novo/Editar Artista</h2>
+                <input id="artistId" type="hidden">
+                <div class="space-y-3">
+                    <input id="artistName" type="text" placeholder="Nome do Artista" class="w-full border p-2 rounded">
+                    <select id="artistType" class="w-full border p-2 rounded">
+                        <option value="SOLO">Solo</option>
+                        <option value="DUPLA">Dupla</option>
+                        <option value="BANDA">Banda</option>
+                    </select>
+                    <button onclick="saveArtist()" class="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700">Salvar Artista</button>
+                </div>
             </div>
 
-            <div class="flex items-center gap-2 mt-4">
-                <label class="text-sm">Role:</label>
-                <select id="role" class="border p-2 rounded">
-                    <option value="ADMIN" selected>ADMIN</option>
-                    <option value="USER">USER</option>
+            <!-- Lista de Artistas -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold">Listagem de Artistas</h2>
+                    <button onclick="getArtists()" class="text-indigo-600 hover:underline text-sm">Atualizar</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="border-b text-gray-400 text-sm">
+                                <th class="pb-2">ID</th>
+                                <th class="pb-2">Nome</th>
+                                <th class="pb-2">Tipo</th>
+                                <th class="pb-2 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="artistTableBody" class="text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO 3: ÁLBUNS E CAPAS (GALERIA) -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">💿 Álbuns e Capas</h2>
+                <button onclick="openAlbumModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">+ Novo Álbum</button>
+            </div>
+            
+            <div id="albumGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <!-- Cards de álbuns aparecerão aqui -->
+            </div>
+        </section>
+    </div>
+
+    <!-- MODAL DE ÁLBUM -->
+    <div id="albumModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl p-6 max-w-md w-full">
+            <h2 id="modalTitle" class="text-xl font-bold mb-4">Novo Álbum</h2>
+            <div class="space-y-4">
+                <input id="formAlbumId" type="hidden">
+                <input id="albumTitle" type="text" placeholder="Título do Álbum" class="w-full border p-2 rounded">
+                <input id="albumYear" type="number" placeholder="Ano de Lançamento" class="w-full border p-2 rounded">
+                <select id="albumArtistId" class="w-full border p-2 rounded">
+                    <option value="">Selecione o Artista Principal</option>
                 </select>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-                <button onclick="login()" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">Fazer Login</button>
-                <button onclick="register()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Registrar Admin</button>
-                <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Logout</button>
-            </div>
-
-            <p id="loginStatus" class="mt-2 text-sm font-mono break-all"></p>
-            <textarea id="tokenBox" readonly class="w-full mt-2 p-2 border rounded text-xs" rows="3" placeholder="Token aparecerá aqui..."></textarea>
-        </div>
-
-        <!-- ARTISTS SECTION -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">2. Artistas</h2>
-            <div class="flex gap-2">
-                <button onclick="getArtists()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Listar Artistas</button>
-            </div>
-            <div id="artistList" class="mt-4 space-y-2"></div>
-        </div>
-
-        <!-- UPLOAD SECTION -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">3. Upload de Capa (MinIO)</h2>
-            <div class="flex flex-col space-y-4">
-                <div class="flex items-center gap-4">
-                    <input id="albumId" type="number" placeholder="ID do Álbum" class="border p-2 rounded w-32" value="1">
-                    <input id="fileInput" type="file" class="border p-2 rounded flex-1">
-                </div>
                 <div class="flex gap-2">
-                    <button onclick="uploadFile()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-max">Enviar para MinIO</button>
-                    <button onclick="refreshTokenStatus()" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 w-max">Verificar Token</button>
+                    <button onclick="saveAlbum()" class="flex-1 bg-indigo-600 text-white py-2 rounded font-bold">Salvar</button>
+                    <button onclick="closeAlbumModal()" class="flex-1 bg-gray-200 py-2 rounded">Cancelar</button>
                 </div>
             </div>
-            <p id="uploadStatus" class="mt-2 text-sm"></p>
         </div>
     </div>
 
@@ -75,50 +113,8 @@
         const API_URL = 'http://localhost:8080/api/v1';
         let token = '';
         let stompClient = null;
-        let reconnectIntervalMs = 5000;
-        let reconnectTimer = null;
 
-        function setStatus(elementId, message, ok = true) {
-            const el = document.getElementById(elementId);
-            el.innerText = message;
-            el.className = ok ? 'mt-2 text-sm text-green-600' : 'mt-2 text-sm text-red-600';
-        }
-
-        function refreshTokenStatus() {
-            if (!token) {
-                setStatus('loginStatus', 'Nenhum token presente. Faça login.', false);
-                document.getElementById('tokenBox').value = '';
-                return;
-            }
-            document.getElementById('tokenBox').value = token;
-            setStatus('loginStatus', 'Token presente. Pronto para usar.', true);
-        }
-
-        async function register() {
-            const username = document.getElementById('user').value;
-            const password = document.getElementById('pass').value;
-            const email = document.getElementById('email').value;
-            const fullName = document.getElementById('fullName').value;
-            const role = document.getElementById('role').value;
-
-            try {
-                const res = await fetch(`${API_URL}/auth/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password, email, fullName, role })
-                });
-
-                if (res.ok) {
-                    setStatus('loginStatus', '✅ Usuário registrado com sucesso. Agora faça login.', true);
-                } else {
-                    const err = await res.json().catch(()=>({message: res.statusText}));
-                    setStatus('loginStatus', '❌ Erro ao registrar: ' + (err.message || res.statusText), false);
-                }
-            } catch (err) {
-                setStatus('loginStatus', '❌ Erro de conexão: ' + err.message, false);
-            }
-        }
-
+        // --- AUTH ---
         async function login() {
             const username = document.getElementById('user').value;
             const password = document.getElementById('pass').value;
@@ -128,181 +124,203 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                const data = await res.json().catch(()=>null);
-                if (res.ok && data && data.accessToken) {
+                const data = await res.json();
+                if (res.ok) {
                     token = data.accessToken;
-                    document.getElementById('tokenBox').value = token;
-                    setStatus('loginStatus', '✅ Login realizado! Conectando WebSocket...', true);
-
-                    // Conectar ao WS (com pequeno delay)
-                    setTimeout(() => connectWebSocket(), 300);
-                } else {
-                    const msg = data && data.message ? data.message : (res.statusText || 'Falha no login');
-                    setStatus('loginStatus', '❌ Erro: ' + msg, false);
-                }
-            } catch (err) {
-                setStatus('loginStatus', '❌ Erro de conexão: ' + err.message, false);
-            }
+                    document.getElementById('authInfo').innerText = `Logado como: ${username}`;
+                    document.getElementById('loginStatus').innerText = "✅ Conectado";
+                    connectWebSocket();
+                    loadAll();
+                } else { alert("Erro no login: " + data.message); }
+            } catch (e) { console.error(e); }
         }
 
         function logout() {
             token = '';
-            document.getElementById('tokenBox').value = '';
-            setStatus('loginStatus', 'Deslogado.', true);
-            disconnectWebSocket();
+            location.reload();
         }
 
+        function loadAll() {
+            getArtists();
+            getAlbums();
+            updateArtistSelect();
+        }
+
+        // --- ARTISTAS (CRUD) ---
         async function getArtists() {
-            if (!token) {
-                alert('Faça login primeiro!');
-                return;
-            }
+            const res = await fetch(`${API_URL}/artists?size=100`, { headers: { 'Authorization': `Bearer ${token}` }});
+            const data = await res.json();
+            const tbody = document.getElementById('artistTableBody');
+            tbody.innerHTML = data.content.map(a => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-3">${a.id}</td>
+                    <td class="font-semibold">${a.name}</td>
+                    <td><span class="px-2 py-1 bg-gray-100 rounded text-xs">${a.type}</span></td>
+                    <td class="text-right space-x-2">
+                        <button onclick="editArtist(${a.id}, '${a.name}', '${a.type}')" class="text-blue-600 hover:underline">Editar</button>
+                        <button onclick="deleteArtist(${a.id})" class="text-red-600 hover:underline">Excluir</button>
+                    </td>
+                </tr>
+            `).join('');
+            updateArtistSelect(data.content);
+        }
+
+        async function saveArtist() {
+            const id = document.getElementById('artistId').value;
+            const name = document.getElementById('artistName').value;
+            const type = document.getElementById('artistType').value;
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `${API_URL}/artists/${id}` : `${API_URL}/artists`;
+
+            await fetch(url, {
+                method,
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, type })
+            });
+            document.getElementById('artistId').value = '';
+            document.getElementById('artistName').value = '';
+            getArtists();
+        }
+
+        function editArtist(id, name, type) {
+            document.getElementById('artistId').value = id;
+            document.getElementById('artistName').value = name;
+            document.getElementById('artistType').value = type;
+        }
+
+        async function deleteArtist(id) {
+            if(!confirm("Excluir artista?")) return;
+            await fetch(`${API_URL}/artists/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }});
+            getArtists();
+        }
+
+        // --- ÁLBUNS E CAPAS ---
+        async function getAlbums() {
             try {
-                const res = await fetch(`${API_URL}/artists?page=0&size=10`, {
+                const res = await fetch(`${API_URL}/albums?size=100`, { 
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (!res.ok) {
-                    const err = await res.json().catch(()=>({message: res.statusText}));
-                    setStatus('loginStatus', '❌ Erro ao listar artistas: ' + (err.message || res.statusText), false);
-                    return;
-                }
                 const data = await res.json();
-                const list = document.getElementById('artistList');
-                if (!data || !data.content) {
-                    list.innerHTML = '<div class="p-3">Nenhum artista encontrado.</div>';
-                    return;
-                }
-                list.innerHTML = data.content.map(a => `
-                    <div class="p-3 border-b flex justify-between">
-                        <span><strong>${a.name}</strong> (${a.type})</span>
-                        <span class="text-gray-500 text-xs">ID: ${a.id}</span>
+                const grid = document.getElementById('albumGrid');
+                
+                grid.innerHTML = data.content.map(album => {
+                    // Lógica para pegar a primeira capa do Set/Array 'covers'
+                    let coverUrl = 'https://placehold.co/400x400?text=Sem+Capa';
+                    
+                    if (album.covers && album.covers.length > 0) {
+                        // Procura a primeira capa que tenha uma URL válida
+                        const firstCover = album.covers.find(c => c.url) || album.covers[0];
+                        if (firstCover.url) {
+                            coverUrl = firstCover.url;
+                        }
+                    }
+                    
+                    return `
+                    <div class="card-album bg-white rounded-xl overflow-hidden shadow-md border border-gray-100 relative group">
+                        <img src="${coverUrl}" class="w-full h-48 object-cover bg-gray-200" 
+                            onerror="this.src='https://placehold.co/400x400?text=Erro+na+Imagem'">
+                        <div class="p-4">
+                            <h3 class="font-bold text-gray-800 truncate">${album.title}</h3>
+                            <p class="text-xs text-gray-500">${album.releaseYear} • ID: ${album.id}</p>
+                            
+                            <div class="mt-4 flex flex-col gap-2">
+                                <!-- Input de arquivo escondido -->
+                                <input type="file" id="file-${album.id}" class="hidden" onchange="uploadCover(${album.id})">
+                                
+                                <button onclick="document.getElementById('file-${album.id}').click()" 
+                                        class="text-xs bg-indigo-50 text-indigo-600 py-2 rounded font-semibold hover:bg-indigo-100 transition">
+                                    📷 Alterar Capa
+                                </button>
+                                
+                                <div class="flex justify-between mt-2">
+                                    <button onclick="deleteAlbum(${album.id})" class="text-xs text-red-500 hover:underline">Excluir Álbum</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                `).join('');
-                setStatus('loginStatus', '✅ Artistas carregados.', true);
-            } catch (err) {
-                setStatus('loginStatus', '❌ Erro ao buscar artistas: ' + err.message, false);
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error("Erro ao carregar álbuns:", error);
             }
         }
 
-        async function uploadFile() {
-            if (!token) {
-                alert('Faça login primeiro!');
-                return;
-            }
-            const fileField = document.getElementById('fileInput');
-            const albumId = document.getElementById('albumId').value;
-            if (!fileField.files.length) return alert('Selecione um arquivo');
+        async function uploadCover(albumId) {
+            const fileInput = document.getElementById(`file-${albumId}`);
+            if (!fileInput.files[0]) return;
 
             const formData = new FormData();
-            formData.append('file', fileField.files[0]);
+            formData.append('file', fileInput.files[0]);
 
-            try {
-                setStatus('uploadStatus', 'Enviando...', true);
-                const res = await fetch(`${API_URL}/albums/${albumId}/covers`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
-                });
-                if (res.ok) {
-                    setStatus('uploadStatus', '✅ Upload realizado com sucesso no MinIO!', true);
-                } else {
-                    const errData = await res.json().catch(()=>({message: res.statusText}));
-                    setStatus('uploadStatus', '❌ Erro: ' + (errData.message || res.statusText), false);
-                }
-            } catch (err) {
-                setStatus('uploadStatus', '❌ Erro de conexão: ' + err.message, false);
+            const res = await fetch(`${API_URL}/albums/${albumId}/covers`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            if(res.ok) {
+                alert("Capa atualizada!");
+                getAlbums();
             }
         }
 
+        async function deleteAlbum(id) {
+            if(!confirm("Excluir álbum?")) return;
+            await fetch(`${API_URL}/albums/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }});
+            getAlbums();
+        }
+
+        // --- AUXILIARES ---
+        function openAlbumModal() { document.getElementById('albumModal').classList.remove('hidden'); }
+        function closeAlbumModal() { document.getElementById('albumModal').classList.add('hidden'); }
+
+        async function updateArtistSelect(artists = []) {
+            const select = document.getElementById('albumArtistId');
+            if(artists.length === 0) {
+                const res = await fetch(`${API_URL}/artists?size=100`, { headers: { 'Authorization': `Bearer ${token}` }});
+                const data = await res.json();
+                artists = data.content;
+            }
+            select.innerHTML = '<option value="">Selecione o Artista</option>' + 
+                artists.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+        }
+
+        async function saveAlbum() {
+            const title = document.getElementById('albumTitle').value;
+            const releaseYear = document.getElementById('albumYear').value;
+            const artistId = document.getElementById('albumArtistId').value;
+
+            const res = await fetch(`${API_URL}/albums`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, releaseYear, artistIds: [parseInt(artistId)] })
+            });
+
+            if(res.ok) {
+                closeAlbumModal();
+                getAlbums();
+            }
+        }
+
+        // --- WEBSOCKET ---
         function connectWebSocket() {
-            // Necessita token para conectar (evita conexões anônimas)
-            if (!token) {
-                setStatus('loginStatus', '❌ Token ausente: faça login antes de conectar WebSocket.', false);
-                return;
-            }
-
-            // Limpa tentativas de reconexão pendentes
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-
-            // Se já tem cliente, desconecta para reiniciar
-            if (stompClient !== null) {
-                try { stompClient.disconnect(); } catch(e){ /* ignore */ }
-                stompClient = null;
-            }
-
-            const socket = new SockJS('http://localhost:8080/ws', null, {
-                transports: ['websocket','xhr-streaming','xhr-polling']
-            });
-
+            const socket = new SockJS('http://localhost:8080/ws');
             stompClient = Stomp.over(socket);
-
-            // Opcional: desativa logs verbose do STOMP
-            if (stompClient) {
-                stompClient.debug = null;
-                // desativa heartbeats para evitar mismatch
-                stompClient.heartbeat.outgoing = 0;
-                stompClient.heartbeat.incoming = 0;
-                // reconnection delay em ms (algumas versões do stompjs respeitam essa propriedade)
-                stompClient.reconnect_delay = reconnectIntervalMs;
-            }
-
-            // Envia Authorization header no CONNECT (útil se implementar HandshakeInterceptor)
-            const connectHeaders = { 'Authorization': 'Bearer ' + token };
-
-            stompClient.connect(connectHeaders, function(frame) {
-                console.log('WS conectado:', frame);
-                setStatus('loginStatus', '✅ Login e WebSocket ativos!', true);
-
-                // Subscribe to albums topic
-                stompClient.subscribe('/topic/albums', function(message) {
-                    try {
-                        const notification = JSON.parse(message.body);
-                        showNotification(notification.message);
-                    } catch (e) {
-                        console.warn('Mensagem WS sem JSON:', message.body);
-                    }
+            stompClient.debug = null;
+            stompClient.connect({}, function() {
+                stompClient.subscribe('/topic/albums', function(msg) {
+                    const note = JSON.parse(msg.body);
+                    showNotification(note.message);
+                    getAlbums(); // Atualiza a grade automaticamente quando alguém cria um álbum
                 });
-
-            }, function(error) {
-                console.error('Erro WS:', error);
-                setStatus('loginStatus', '❌ Erro na conexão WebSocket. Tentando reconectar em 5s...', false);
-
-                // tentativa simples de reconexão enquanto token estiver presente
-                if (token) {
-                    reconnectTimer = setTimeout(() => {
-                        connectWebSocket();
-                    }, reconnectIntervalMs);
-                }
             });
         }
 
-        function disconnectWebSocket() {
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-            if (stompClient !== null) {
-                try {
-                    stompClient.disconnect();
-                } catch (err) {
-                    console.warn('Erro ao desconectar stompClient', err);
-                }
-                stompClient = null;
-            }
-        }
-
-        function showNotification(message) {
-            const container = document.getElementById('wsNotifications');
-            container.innerText = message;
-            container.classList.remove('hidden');
-
-            setTimeout(() => {
-                container.classList.add('hidden');
-                container.innerText = '';
-            }, 5000);
+        function showNotification(msg) {
+            const el = document.getElementById('wsNotifications');
+            el.innerText = "🔔 " + msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
         }
     </script>
 </body>
